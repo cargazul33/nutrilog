@@ -3,7 +3,7 @@ import {
   toISODate, addDays, bmi,
 } from './calc.js';
 import { loadState, saveState, mergeState, newId, rememberFood, setWeight } from './store.js';
-import { searchFoods, getByBarcode } from './off.js';
+import { searchFoods, getByBarcode, errorMessage } from './off.js';
 
 const $ = (sel) => document.querySelector(sel);
 const state = loadState();
@@ -159,13 +159,13 @@ async function runSearch(query) {
 
   try {
     const results = await searchFoods(q, { signal: searchAbort.signal });
-    $('#search-status').textContent = results.length ? '' : 'Sin resultados. Prueba otro nombre o la entrada manual.';
+    $('#search-status').textContent = results.length
+      ? ''
+      : `No hay resultados para «${q}». Prueba otro nombre o la entrada manual.`;
     if (results.length) list.append(el('h3', {}, 'Open Food Facts'), ...results.map((f) => foodItem(f, pickFood)));
   } catch (err) {
     if (err.name === 'AbortError') return;
-    $('#search-status').textContent = navigator.onLine
-      ? 'No se pudo buscar ahora. Inténtalo de nuevo.'
-      : 'Sin conexión: solo puedes usar recientes o la entrada manual.';
+    $('#search-status').textContent = errorMessage(err);
   }
 }
 
@@ -291,8 +291,8 @@ async function lookupBarcode(code) {
     }
     $('#scan-dialog').close();
     openAmount({ food });
-  } catch {
-    $('#scan-status').textContent = 'No se pudo consultar el código. Revisa la conexión.';
+  } catch (err) {
+    $('#scan-status').textContent = errorMessage(err);
   }
 }
 

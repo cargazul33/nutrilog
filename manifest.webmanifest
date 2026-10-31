@@ -3,6 +3,7 @@
   "short_name": "NutriLog",
   "description": "Diario de comidas y calorías",
   "lang": "es",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -1,5 +1,5 @@
 // Service worker: la interfaz funciona sin conexión; las búsquedas siempre van a la red.
-const CACHE = 'nutrilog-v1';
+const CACHE = 'nutrilog-v2';
 const SHELL = [
   './',
   'index.html',
