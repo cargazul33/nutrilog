@@ -2,11 +2,14 @@ import {
   MEALS, ACTIVITY, GOALS, dailyCalories, macroTargets, scaleNutrients, sumNutrients,
   toISODate, addDays, bmi,
 } from './calc.js';
-import { loadState, saveState, mergeState, newId, rememberFood, setWeight } from './store.js';
+import {
+  loadState, saveState, mergeState, newId, rememberFood, setWeight, addCustomFood, deleteCustomFood,
+  searchLocal, backupReminderDue, snoozeBackupReminder, markExported, profileNoticeDue,
+} from './store.js';
 import { searchFoods, getByBarcode, errorMessage } from './off.js';
 import {
   PROTOCOLS, MIN_GOAL_HOURS, MAX_GOAL_HOURS, isExtended, validGoal, protocolLabel, fastProgress,
-  formatDuration, startFast, endFast, isProlongedRecord, fastingStats,
+  formatDuration, startFast, endFast, isProlongedRecord, fastingStats, goalAlert,
 } from './fasting.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -32,6 +35,15 @@ function svg(tag, attrs = {}, text) {
   if (text != null) node.textContent = text;
   return node;
 }
+
+// Números con formato español (coma decimal, separador de miles).
+const nf = (n, digits = 0) =>
+  (Number.isFinite(n) ? n : 0).toLocaleString('es', { maximumFractionDigits: digits });
+
+const shortDate = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('es', { day: 'numeric', month: 'short' });
+};
 
 function persist() {
   if (!saveState(state)) toast('No se pudo guardar en este dispositivo');
@@ -70,9 +82,9 @@ function renderDiary() {
   const goal = goalKcal();
   const left = goal - total.kcal;
 
-  $('#kcal-goal').textContent = goal;
-  $('#kcal-eaten').textContent = total.kcal;
-  $('#kcal-left').textContent = Math.abs(left);
+  $('#kcal-goal').textContent = nf(goal);
+  $('#kcal-eaten').textContent = nf(total.kcal);
+  $('#kcal-left').textContent = nf(Math.abs(left));
   $('#kcal-left-label').textContent = left >= 0 ? 'restantes' : 'de más';
 
   const ring = $('#ring-fg');
@@ -91,7 +103,7 @@ function renderDiary() {
     const pct = Math.min(100, (total[key] / targets[key]) * 100 || 0);
     return el('div', { class: 'macro' },
       el('small', {}, label),
-      el('span', {}, `${Math.round(total[key])} / ${targets[key]} g`),
+      el('span', {}, `${nf(total[key])} / ${nf(targets[key])} g`),
       el('div', { class: 'bar' }, el('span', { style: `width:${pct}%;background:${color}` })));
   }));
 
@@ -99,18 +111,50 @@ function renderDiary() {
     const items = entries.filter((e) => e.meal === meal.id);
     const mealKcal = sumNutrients(items).kcal;
     return el('div', { class: 'card' },
-      el('div', { class: 'meal-head' }, el('h2', {}, meal.name), el('span', {}, `${mealKcal} kcal`)),
+      el('div', { class: 'meal-head' }, el('h2', {}, meal.name), el('span', {}, `${nf(mealKcal)} kcal`)),
       items.length > 0 && el('ul', { class: 'entries' }, items.map((e) => {
         const n = scaleNutrients(e.per100, e.grams);
         return el('li', { onclick: () => openAmount({ entry: e }) },
           el('div', { class: 'name' }, e.name,
-            el('small', {}, [e.brand, `${e.grams} g`].filter(Boolean).join(' · '))),
-          el('span', { class: 'kcal' }, `${n.kcal} kcal`));
+            el('small', {}, [e.brand, `${nf(e.grams, 1)} g`].filter(Boolean).join(' · '))),
+          el('span', { class: 'kcal' }, `${nf(n.kcal)} kcal`));
       })),
       el('button', { class: 'add-link', onclick: () => openAdd(meal.id) }, '+ Añadir alimento'));
   }));
 
-  $('#water-ml').textContent = state.water[currentDate] || 0;
+  $('#water-ml').textContent = nf(state.water[currentDate] || 0);
+  renderNotices();
+}
+
+/* ---------- Avisos (perfil de ejemplo y copia de seguridad) ---------- */
+
+function notice(text, actionLabel, onAction, onClose) {
+  return el('div', { class: 'card notice', role: 'note' },
+    el('p', {}, text),
+    el('div', { class: 'notice-actions' },
+      el('button', { class: 'btn small', type: 'button', onclick: onAction }, actionLabel),
+      el('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cerrar aviso', onclick: onClose }, '✕')));
+}
+
+function renderNotices() {
+  const items = [];
+  if (profileNoticeDue(state)) {
+    items.push(notice(
+      'Estás usando un perfil de ejemplo. Carga tus datos en Perfil para que el objetivo de calorías sea el tuyo.',
+      'Ir a Perfil',
+      () => showView('profile'),
+      () => { state.meta.profileNoticeDismissed = true; persist(); renderNotices(); }));
+  }
+  if (backupReminderDue(state, Date.now())) {
+    items.push(notice(
+      state.meta.lastExport
+        ? 'Hace más de 30 días que no exportas una copia de tus datos.'
+        : 'Aún no has exportado una copia de tus datos. Se guardan solo en este teléfono.',
+      'Exportar copia',
+      exportData,
+      () => { snoozeBackupReminder(state, Date.now()); persist(); renderNotices(); }));
+  }
+  $('#notices').replaceChildren(...items);
 }
 
 /* ---------- Añadir alimento ---------- */
@@ -118,22 +162,39 @@ function renderDiary() {
 let addMeal = 'breakfast';
 let searchAbort;
 
-function foodItem(food, onPick) {
+function foodItem(food, onPick, onDelete) {
   return el('li', { onclick: () => onPick(food) },
-    el('div', {}, food.name, el('small', {}, food.brand || '')),
-    el('span', { class: 'kcal' }, `${food.per100.kcal} kcal/100 g`));
+    el('div', { class: 'name' }, food.name, food.brand && el('small', {}, food.brand)),
+    el('span', { class: 'kcal' }, `${nf(food.per100.kcal)} kcal/100 g`),
+    onDelete && el('button', {
+      class: 'del', type: 'button', 'aria-label': `Borrar ${food.name}`,
+      onclick: (e) => { e.stopPropagation(); onDelete(food); },
+    }, '✕'));
+}
+
+function removeCustomFood(food) {
+  if (!confirm(`¿Borrar «${food.name}» de Mis alimentos? Lo ya anotado en el diario se mantiene.`)) return;
+  deleteCustomFood(state, food.id);
+  persist();
+  runSearch($('#search-input').value);
+  toast('Alimento borrado');
+}
+
+// Secciones locales: Mis alimentos primero, luego recientes.
+function localSections(query) {
+  const { custom, recent } = searchLocal(state, query);
+  return [
+    ...(custom.length ? [el('h3', {}, 'Mis alimentos'), ...custom.map((f) => foodItem(f, pickFood, removeCustomFood))] : []),
+    ...(recent.length ? [el('h3', {}, 'Recientes'), ...recent.map((f) => foodItem(f, pickFood))] : []),
+  ];
 }
 
 function showRecent() {
-  const list = $('#food-results');
-  $('#search-status').textContent = '';
-  if (!state.recentFoods.length) {
-    list.replaceChildren();
-    $('#search-status').textContent = 'Busca un alimento, escanea un código o añádelo a mano.';
-    return;
-  }
-  list.replaceChildren(el('h3', {}, 'Recientes'),
-    ...state.recentFoods.map((f) => foodItem(f, pickFood)));
+  const sections = localSections('');
+  $('#food-results').replaceChildren(...sections);
+  $('#search-status').textContent = sections.length
+    ? ''
+    : 'Busca un alimento, escanea un código o crea un alimento propio.';
 }
 
 function openAdd(mealId) {
@@ -155,17 +216,18 @@ async function runSearch(query) {
   searchAbort?.abort();
   searchAbort = new AbortController();
 
-  const local = state.recentFoods.filter((f) =>
-    `${f.name} ${f.brand || ''}`.toLowerCase().includes(q.toLowerCase()));
   const list = $('#food-results');
-  list.replaceChildren(...(local.length ? [el('h3', {}, 'Recientes'), ...local.map((f) => foodItem(f, pickFood))] : []));
-  $('#search-status').textContent = 'Buscando…';
+  const local = localSections(q);
+  list.replaceChildren(...local);
+  $('#search-status').textContent = 'Buscando en Open Food Facts…';
 
   try {
     const results = await searchFoods(q, { signal: searchAbort.signal });
     $('#search-status').textContent = results.length
       ? ''
-      : `No hay resultados para «${q}». Prueba otro nombre o la entrada manual.`;
+      : local.length
+        ? `Open Food Facts no tiene resultados para «${q}».`
+        : `No hay resultados para «${q}». Prueba otro nombre o crea un alimento propio.`;
     if (results.length) list.append(el('h3', {}, 'Open Food Facts'), ...results.map((f) => foodItem(f, pickFood)));
   } catch (err) {
     if (err.name === 'AbortError') return;
@@ -183,7 +245,7 @@ function openAmount({ food, entry, manual = false }) {
   form.reset();
   $('#manual-fields').hidden = !manual;
   for (const name of ['name', 'kcal']) form.elements[name].required = manual;
-  $('#amount-title').textContent = manual ? 'Entrada manual' : amountCtx.food.name;
+  $('#amount-title').textContent = manual ? 'Alimento propio' : amountCtx.food.name;
   form.elements.grams.value = entry ? entry.grams : (food?.serving || 100);
   form.elements.meal.value = entry ? entry.meal : addMeal;
   $('#delete-entry').hidden = !entry;
@@ -203,7 +265,7 @@ function updateAmountPreview() {
   const grams = Number(form.elements.grams.value) || 0;
   const n = scaleNutrients(readPer100(form), grams);
   $('#amount-preview').textContent =
-    `${n.kcal} kcal · P ${n.protein} g · C ${n.carbs} g · G ${n.fat} g`;
+    `${nf(n.kcal)} kcal · P ${nf(n.protein, 1)} g · C ${nf(n.carbs, 1)} g · G ${nf(n.fat, 1)} g`;
 }
 
 function submitAmount(e) {
@@ -218,9 +280,11 @@ function submitAmount(e) {
     Object.assign(amountCtx.entry, { grams, meal });
     toast('Guardado');
   } else {
-    const food = amountCtx.manual
-      ? { name: form.elements.name.value.trim(), brand: '', per100, serving: grams }
-      : amountCtx.food;
+    let food = amountCtx.food;
+    if (amountCtx.manual) {
+      food = { name: form.elements.name.value.trim(), brand: form.elements.brand.value.trim(), per100, serving: grams };
+      if (form.elements.saveCustom.checked) food = addCustomFood(state, food, newId());
+    }
     state.entries.push({
       id: newId(), date: currentDate, meal, grams,
       name: food.name, brand: food.brand || '', per100: food.per100,
@@ -317,15 +381,15 @@ function renderWeightChart() {
     root.append(svg('polyline', { class: 'line', points: data.map((d, i) => `${x(i)},${y(d.kg)}`).join(' ') }));
     data.forEach((d, i) => root.append(svg('circle', { class: 'dot', cx: x(i), cy: y(d.kg), r: 3 })));
     root.append(
-      svg('text', { x: 0, y: y(max - 1) + 3 }, (max - 1).toFixed(1)),
-      svg('text', { x: 0, y: y(min + 1) + 3 }, (min + 1).toFixed(1)),
-      svg('text', { x: P, y: H - 4 }, data[0].date.slice(5)),
-      svg('text', { x: W - P, y: H - 4, 'text-anchor': 'end' }, data.at(-1).date.slice(5)));
+      svg('text', { x: 0, y: y(max - 1) + 3 }, nf(max - 1, 1)),
+      svg('text', { x: 0, y: y(min + 1) + 3 }, nf(min + 1, 1)),
+      svg('text', { x: P, y: H - 4 }, shortDate(data[0].date)),
+      svg('text', { x: W - P, y: H - 4, 'text-anchor': 'end' }, shortDate(data.at(-1).date)));
     box.replaceChildren(root);
   }
   const last = state.weights.at(-1);
   $('#weight-summary').textContent = last
-    ? `Último: ${last.kg} kg · IMC ${bmi(last.kg, state.profile.heightCm)}`
+    ? `Último: ${nf(last.kg, 1)} kg (${shortDate(last.date)}) · IMC ${nf(bmi(last.kg, state.profile.heightCm), 1)}`
     : '';
 }
 
@@ -333,6 +397,10 @@ function renderKcalChart() {
   const today = toISODate(new Date());
   const days = Array.from({ length: 7 }, (_, i) => addDays(today, i - 6));
   const values = days.map((d) => sumNutrients(entriesFor(d)).kcal);
+  if (values.every((v) => v === 0)) {
+    $('#kcal-chart').replaceChildren(el('p', { class: 'muted' }, 'Aún no hay comidas anotadas en los últimos 7 días.'));
+    return;
+  }
   const goal = goalKcal();
   const W = 320, H = 150, P = 20;
   const max = Math.max(goal * 1.2, ...values);
@@ -359,7 +427,7 @@ function renderFastStats() {
   }
   const items = [
     [s.completed, `cumplidos de ${s.total}`],
-    [`${s.totalHours} h`, 'en ayuno en total'],
+    [`${nf(s.totalHours, 1)} h`, 'en ayuno en total'],
     [formatHM(s.longestMs), 'ayuno más largo'],
     [s.thisWeek, 'cumplidos esta semana'],
     [s.streakDays, s.streakDays === 1 ? 'día de racha' : 'días de racha'],
@@ -434,6 +502,7 @@ function tickFast() {
   const p = fastProgress(fast, Date.now());
   const time = formatDuration(p.elapsedMs);
   $('#fast-banner-time').textContent = time;
+  $('#fast-banner-label').textContent = p.reached ? 'Ayuno en curso · meta cumplida' : 'Ayuno en curso';
   $('#fast-elapsed').textContent = time;
   setFastRing(p.ratio, p.reached);
   const status = $('#fast-status');
@@ -441,6 +510,75 @@ function tickFast() {
     ? 'Meta cumplida. Termina el ayuno cuando quieras.'
     : `Faltan ${formatDuration(p.remainingMs)}`;
   status.classList.toggle('done', p.reached);
+  checkGoalAlert();
+}
+
+/* ---------- Aviso al cumplir la meta ---------- */
+
+const canNotify = () => 'Notification' in window && 'serviceWorker' in navigator;
+
+async function showGoalNotification(fast) {
+  const body = `Cumpliste tu ayuno de ${fast.goalHours} h. Termínalo cuando quieras.`;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('Meta de ayuno cumplida', {
+      body,
+      tag: 'nutrilog-fast-goal',
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      vibrate: [200, 100, 200],
+      data: { url: './#ayuno' },
+    });
+  } catch {
+    // Sin service worker activo: notificación directa de la página.
+    try { new Notification('Meta de ayuno cumplida', { body, icon: 'icons/icon-192.png' }); } catch { /* sin soporte */ }
+  }
+}
+
+function checkGoalAlert() {
+  const fast = state.fasting.current;
+  const enabled = state.settings.fastNotify && canNotify() && Notification.permission === 'granted';
+  const action = goalAlert(fast, Date.now(), { enabled });
+  if (!action) return;
+  fast.notified = true;
+  persist();
+  toast('Meta de ayuno cumplida');
+  if (action === 'notify') {
+    navigator.vibrate?.([200, 100, 200]);
+    showGoalNotification(fast);
+  }
+}
+
+function renderNotify() {
+  const btn = $('#notify-btn');
+  const hint = $('#notify-hint');
+  if (!canNotify()) {
+    btn.hidden = true;
+    hint.textContent = 'Este navegador no permite notificaciones. El aviso se verá en pantalla.';
+    return;
+  }
+  const perm = Notification.permission;
+  const on = state.settings.fastNotify && perm === 'granted';
+  btn.hidden = perm === 'denied';
+  btn.setAttribute('aria-pressed', String(on));
+  btn.textContent = on ? 'Aviso activado · desactivar' : 'Activar aviso al cumplir la meta';
+  hint.textContent = perm === 'denied'
+    ? 'Las notificaciones están bloqueadas para esta app. Puedes permitirlas en los ajustes del navegador.'
+    : on
+      ? 'Te avisaremos con la app abierta o en segundo plano. Con la app cerrada, el aviso aparece al volver a abrirla.'
+      : '';
+}
+
+async function toggleNotify() {
+  if (state.settings.fastNotify && Notification.permission === 'granted') {
+    state.settings.fastNotify = false;
+  } else {
+    const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    state.settings.fastNotify = perm === 'granted';
+    if (perm === 'granted') toast('Aviso activado');
+  }
+  persist();
+  renderNotify();
 }
 
 function renderLastFast() {
@@ -485,6 +623,7 @@ function renderFast() {
   }
   renderLastFast();
   renderFastHistory();
+  renderNotify();
   tickFast();
 }
 
@@ -555,27 +694,47 @@ function updateGoalPreview() {
     `Objetivo: ${kcal} kcal/día · P ${m.protein} g · C ${m.carbs} g · G ${m.fat} g`;
 }
 
+function renderBackupInfo() {
+  const last = state.meta.lastExport;
+  $('#backup-info').textContent = last
+    ? `Última copia exportada: ${new Date(last).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })}.`
+    : 'Todavía no exportaste ninguna copia.';
+}
+
 function exportData() {
+  const now = Date.now();
+  markExported(state, now);
+  persist();
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const a = el('a', { href: URL.createObjectURL(blob), download: `nutrilog-${toISODate(new Date())}.json` });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: `nutrilog-${toISODate(new Date(now))}.json` });
+  document.body.append(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  renderBackupInfo();
+  renderNotices();
+  toast('Copia exportada');
 }
 
 async function importData(file) {
+  let data;
   try {
-    const data = mergeState(JSON.parse(await file.text()));
-    Object.assign(state, data);
-    persist();
-    fastChoice = { ...state.fasting.lastGoal };
-    lastEnded = null;
-    fillProfile();
-    renderDiary();
-    renderFast();
-    toast('Copia importada');
+    data = mergeState(JSON.parse(await file.text()));
   } catch {
     toast('El archivo no es una copia válida');
+    return;
   }
+  if (!confirm('Importar esta copia reemplaza los datos actuales de la app. ¿Continuar?')) return;
+  Object.assign(state, data);
+  persist();
+  fastChoice = { ...state.fasting.lastGoal };
+  lastEnded = null;
+  fillProfile();
+  renderDiary();
+  renderFast();
+  renderBackupInfo();
+  toast('Copia importada');
 }
 
 /* ---------- Navegación e inicio ---------- */
@@ -586,7 +745,7 @@ function showView(name) {
   if (name === 'diary') renderDiary();
   if (name === 'fast') renderFast();
   if (name === 'progress') renderProgress();
-  if (name === 'profile') fillProfile();
+  if (name === 'profile') { fillProfile(); renderBackupInfo(); }
 }
 
 function init() {
@@ -637,6 +796,7 @@ function init() {
   $('#profile-form').addEventListener('submit', (e) => {
     e.preventDefault();
     state.profile = readProfile();
+    state.meta.profileSaved = true;
     persist();
     updateGoalPreview();
     toast('Perfil guardado');
@@ -667,6 +827,7 @@ function init() {
   $('#fast-start-btn').addEventListener('click', beginFast);
   $('#fast-end-btn').addEventListener('click', finishFast);
   $('#fast-banner').addEventListener('click', () => showView('fast'));
+  $('#notify-btn').addEventListener('click', toggleNotify);
   $('#custom-hours').addEventListener('input', (e) => {
     fastChoice = { goalHours: e.target.value === '' ? NaN : Number(e.target.value), protocol: null };
     renderFastSetup();
@@ -680,6 +841,10 @@ function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
+  navigator.serviceWorker?.addEventListener('message', (e) => {
+    if (e.data?.type === 'open-view') showView(e.data.view);
+  });
+  if (location.hash === '#ayuno') showView('fast');
 
   renderDiary();
 }

@@ -233,3 +233,17 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .stat strong { display: block; font-size: 1.25rem; }
 .stat span { color: var(--muted); font-size: .8rem; }
+
+/* Avisos */
+.notice { display: flex; gap: 12px; align-items: center; justify-content: space-between; border-left: 4px solid var(--primary); }
+.notice p { margin: 0; font-size: .9rem; }
+.notice-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.notice .icon-btn { font-size: 1rem; width: 36px; height: 36px; }
+.notify-row { width: 100%; margin-top: 12px; display: grid; justify-items: center; gap: 4px; }
+.notify-row .btn[aria-pressed="true"] { border-color: var(--primary); }
+.notify-row p { margin: 0; }
+.form label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
+input[type="checkbox"] { width: auto; accent-color: var(--primary); }
+.food-list li .name { flex: 1; min-width: 0; }
+.food-list .del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 0 0 0 8px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }

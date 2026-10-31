@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PROTOCOLS, isExtended, validGoal, fastProgress, formatDuration, startFast, endFast,
-  isProlongedRecord, fastingStats, sanitizeFasting, protocolLabel,
+  isProlongedRecord, fastingStats, sanitizeFasting, protocolLabel, goalAlert, LATE_ALERT_MS,
 } from '../js/fasting.js';
 import { defaultState, mergeState } from '../js/store.js';
 
@@ -49,7 +49,7 @@ test('formatDuration usa hh:mm:ss y supera 24 h', () => {
 test('startFast guarda la marca de inicio y no permite dos a la vez', () => {
   const s = defaultState();
   startFast(s, { goalHours: 18, protocol: '18:6' }, 1000);
-  assert.deepEqual(s.fasting.current, { start: 1000, goalHours: 18, protocol: '18:6' });
+  assert.deepEqual(s.fasting.current, { start: 1000, goalHours: 18, protocol: '18:6', notified: false });
   assert.deepEqual(s.fasting.lastGoal, { goalHours: 18, protocol: '18:6' });
   assert.throws(() => startFast(s, { goalHours: 16 }, 2000));
   assert.throws(() => startFast(defaultState(), { goalHours: 0 }, 2000));
@@ -132,10 +132,31 @@ test('migración: el ayuno en curso sobrevive y se descartan datos rotos', () =>
       lastGoal: { goalHours: 999 },
     },
   });
-  assert.deepEqual(s.fasting.current, { start: 1000, goalHours: 16, protocol: '16:8' });
+  assert.deepEqual(s.fasting.current, { start: 1000, goalHours: 16, protocol: '16:8', notified: false });
   assert.equal(s.fasting.history.length, 1);
   assert.equal(s.fasting.history[0].completed, true); // se recalcula desde los tiempos
   assert.equal(s.fasting.history[0].durationMs, 17 * H);
   assert.deepEqual(s.fasting.lastGoal, { goalHours: 16, protocol: '16:8' });
   assert.equal(sanitizeFasting({ current: { start: 5, goalHours: 0 } }).current, null);
+});
+
+test('goalAlert: avisa una sola vez al cumplir la meta', () => {
+  const fast = { start: 0, goalHours: 16, notified: false };
+  assert.equal(goalAlert(fast, 15 * H, { enabled: true }), null); // aún no
+  assert.equal(goalAlert(fast, 16 * H, { enabled: true }), 'notify'); // justo en la meta
+  assert.equal(goalAlert(fast, 16 * H + LATE_ALERT_MS, { enabled: true }), 'notify');
+  assert.equal(goalAlert(fast, 16 * H, { enabled: false }), 'silent'); // sin permiso: solo pantalla
+  assert.equal(goalAlert({ ...fast, notified: true }, 17 * H, { enabled: true }), null); // ya avisado
+  assert.equal(goalAlert(null, 17 * H, { enabled: true }), null);
+});
+
+test('goalAlert: si la app estuvo cerrada al cumplirse, al volver avisa solo en pantalla', () => {
+  const fast = { start: 0, goalHours: 16, notified: false };
+  assert.equal(goalAlert(fast, 16 * H + LATE_ALERT_MS + 1, { enabled: true }), 'silent');
+});
+
+test('la marca de aviso enviado sobrevive a la recarga', () => {
+  const f = sanitizeFasting({ current: { start: 0, goalHours: 16, protocol: '16:8', notified: true } });
+  assert.equal(f.current.notified, true);
+  assert.equal(sanitizeFasting({ current: { start: 0, goalHours: 16 } }).current.notified, false);
 });

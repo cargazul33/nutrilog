@@ -1,5 +1,5 @@
 // Service worker: la interfaz funciona sin conexión; las búsquedas siempre van a la red.
-const CACHE = 'nutrilog-v3';
+const CACHE = 'nutrilog-v4';
 const SHELL = [
   './',
   'index.html',
@@ -39,5 +39,21 @@ self.addEventListener('fetch', (event) => {
         return res;
       })
       .catch(() => caches.match(event.request).then((r) => r || caches.match('index.html'))),
+  );
+});
+
+// Al tocar la notificación de meta cumplida: enfoca la app abierta o la abre en Ayuno.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || './', self.registration.scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const client = list.find((c) => c.url.startsWith(self.registration.scope));
+      if (client) {
+        client.postMessage({ type: 'open-view', view: 'fast' });
+        return client.focus();
+      }
+      return self.clients.openWindow(url);
+    }),
   );
 });

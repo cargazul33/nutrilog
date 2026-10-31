@@ -29,8 +29,10 @@
         <button class="icon-btn" data-day="1" aria-label="Día siguiente">›</button>
       </nav>
 
+      <div id="notices"></div>
+
       <button id="fast-banner" class="card fast-banner" type="button" hidden>
-        <span>Ayuno en curso</span>
+        <span id="fast-banner-label">Ayuno en curso</span>
         <strong id="fast-banner-time">00:00:00</strong>
       </button>
 
@@ -86,6 +88,10 @@
           <div><dt>Abre la ventana de comida</dt><dd id="fast-end"></dd></div>
         </dl>
         <button id="fast-end-btn" class="btn danger wide" type="button" hidden>Terminar ayuno</button>
+        <div class="notify-row">
+          <button id="notify-btn" class="btn ghost small" type="button" aria-pressed="false">Activar aviso al cumplir la meta</button>
+          <p class="muted small-text" id="notify-hint"></p>
+        </div>
       </div>
 
       <div class="card" id="fast-setup">
@@ -150,11 +156,12 @@
         <button class="btn" type="submit">Guardar</button>
       </form>
       <div class="card form">
-        <h2>Datos</h2>
-        <p class="muted">Todo se guarda solo en este dispositivo.</p>
+        <h2>Copia de seguridad</h2>
+        <p class="muted">Tus datos se guardan solo en este dispositivo. Exporta una copia de vez en cuando para no perderlos si cambias de teléfono o borras el navegador.</p>
+        <p id="backup-info"></p>
         <div class="row">
-          <button class="btn ghost" id="export-btn" type="button">Exportar copia</button>
-          <label class="btn ghost file-btn">Importar copia<input type="file" id="import-input" accept="application/json" hidden></label>
+          <button class="btn" id="export-btn" type="button">Exportar copia</button>
+          <label class="btn ghost file-btn">Importar copia<input type="file" id="import-input" accept="application/json,.json" hidden></label>
         </div>
       </div>
       <p class="muted center small-text">Datos de alimentos: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL).</p>
@@ -180,7 +187,7 @@
     </form>
     <div class="row">
       <button class="btn ghost" id="scan-btn" type="button">Escanear código</button>
-      <button class="btn ghost" id="manual-btn" type="button">Entrada manual</button>
+      <button class="btn ghost" id="manual-btn" type="button">Alimento propio</button>
     </div>
     <p class="muted" id="search-status"></p>
     <ul class="food-list" id="food-results"></ul>
@@ -195,10 +202,12 @@
       </div>
       <div id="manual-fields" class="form" hidden>
         <label>Nombre <input name="name" maxlength="80"></label>
+        <label>Marca (opcional) <input name="brand" maxlength="60"></label>
         <label>Calorías por 100 g <input type="number" name="kcal" min="0" max="900" step="1" inputmode="decimal"></label>
         <label>Proteínas por 100 g <input type="number" name="protein" min="0" max="100" step="0.1" inputmode="decimal"></label>
         <label>Carbohidratos por 100 g <input type="number" name="carbs" min="0" max="100" step="0.1" inputmode="decimal"></label>
         <label>Grasas por 100 g <input type="number" name="fat" min="0" max="100" step="0.1" inputmode="decimal"></label>
+        <label class="check"><input type="checkbox" name="saveCustom" checked> Guardar en «Mis alimentos» para usarlo otra vez</label>
       </div>
       <div class="form">
         <label>Cantidad (g) <input type="number" name="grams" min="1" max="5000" step="1" required inputmode="decimal"></label>

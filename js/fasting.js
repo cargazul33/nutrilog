@@ -62,7 +62,7 @@ export function formatHours(ms) {
 export function startFast(state, { goalHours, protocol = null }, now) {
   if (state.fasting.current) throw new Error('Ya hay un ayuno en curso');
   if (!validGoal(goalHours)) throw new Error('Meta de horas no válida');
-  state.fasting.current = { start: now, goalHours, protocol };
+  state.fasting.current = { start: now, goalHours, protocol, notified: false };
   state.fasting.lastGoal = { goalHours, protocol };
   return state.fasting.current;
 }
@@ -84,6 +84,19 @@ export function endFast(state, now, id) {
   state.fasting.history = [record, ...state.fasting.history].sort((a, b) => b.end - a.end);
   state.fasting.current = null;
   return record;
+}
+
+// Más allá de este retraso la meta se cumplió con la app cerrada: al volver
+// se avisa en pantalla, sin notificación del sistema que llegaría tarde.
+export const LATE_ALERT_MS = 5 * 60 * 1000;
+
+// Qué hacer cuando el temporizador ve la meta cumplida:
+// 'notify' (notificación + vibración), 'silent' (solo en pantalla) o null (nada).
+export function goalAlert(fast, now, { enabled }) {
+  if (!fast || fast.notified) return null;
+  const p = fastProgress(fast, now);
+  if (!p.reached) return null;
+  return enabled && now - p.endsAt <= LATE_ALERT_MS ? 'notify' : 'silent';
 }
 
 export const isProlongedRecord = (r) => isExtended(r.goalHours) || r.durationMs > 24 * HOUR;
@@ -131,7 +144,7 @@ export function sanitizeFasting(data) {
   if (!data || typeof data !== 'object') return base;
   const c = data.current;
   const current = c && okNum(c.start) && validGoal(c.goalHours)
-    ? { start: c.start, goalHours: c.goalHours, protocol: c.protocol ?? null }
+    ? { start: c.start, goalHours: c.goalHours, protocol: c.protocol ?? null, notified: c.notified === true }
     : null;
   const history = Array.isArray(data.history)
     ? data.history.filter((r) => r && okNum(r.start) && okNum(r.end) && r.end >= r.start && okNum(r.goalHours))
