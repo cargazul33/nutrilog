@@ -29,6 +29,11 @@
         <button class="icon-btn" data-day="1" aria-label="Día siguiente">›</button>
       </nav>
 
+      <button id="fast-banner" class="card fast-banner" type="button" hidden>
+        <span>Ayuno en curso</span>
+        <strong id="fast-banner-time">00:00:00</strong>
+      </button>
+
       <div class="card summary">
         <div class="ring-wrap">
           <svg viewBox="0 0 120 120" class="ring" aria-hidden="true">
@@ -61,6 +66,50 @@
       </div>
     </section>
 
+    <!-- Ayuno -->
+    <section id="view-fast" class="view" aria-label="Ayuno">
+      <div class="card fast-card">
+        <div class="ring-wrap fast-ring">
+          <svg viewBox="0 0 120 120" class="ring" aria-hidden="true">
+            <circle cx="60" cy="60" r="52" class="ring-bg"/>
+            <circle cx="60" cy="60" r="52" class="ring-fg" id="fast-ring"/>
+          </svg>
+          <div class="ring-text">
+            <strong id="fast-elapsed">00:00:00</strong>
+            <span id="fast-sub">Sin ayuno en curso</span>
+          </div>
+        </div>
+        <p class="fast-status" id="fast-status" role="status"></p>
+        <dl class="kcal-stats fast-times" id="fast-times" hidden>
+          <div><dt>Inicio</dt><dd id="fast-start"></dd></div>
+          <div><dt>Meta</dt><dd id="fast-goal"></dd></div>
+          <div><dt>Abre la ventana de comida</dt><dd id="fast-end"></dd></div>
+        </dl>
+        <button id="fast-end-btn" class="btn danger wide" type="button" hidden>Terminar ayuno</button>
+      </div>
+
+      <div class="card" id="fast-setup">
+        <h2>Elegir protocolo</h2>
+        <h3 class="group-title">Intermitente</h3>
+        <div class="chips" id="chips-intermittent"></div>
+        <h3 class="group-title">Prolongado</h3>
+        <div class="chips" id="chips-extended"></div>
+        <label class="custom-hours">Duración personalizada (horas)
+          <input type="number" id="custom-hours" min="1" max="168" step="0.5" placeholder="Por ejemplo 30" inputmode="decimal">
+        </label>
+        <p class="care-note" id="care-note" hidden>Los ayunos prolongados conviene hacerlos con acompañamiento profesional. Si te sientes mal, corta el ayuno.</p>
+        <button id="fast-start-btn" class="btn wide" type="button">Empezar ayuno</button>
+      </div>
+
+      <div class="card" id="fast-last" hidden></div>
+
+      <div class="card">
+        <h2>Historial</h2>
+        <ul class="entries" id="fast-history"></ul>
+        <p class="muted" id="fast-history-empty">Aún no hay ayunos terminados.</p>
+      </div>
+    </section>
+
     <!-- Progreso -->
     <section id="view-progress" class="view" aria-label="Progreso">
       <div class="card">
@@ -75,6 +124,10 @@
       <div class="card">
         <h2>Calorías · últimos 7 días</h2>
         <div id="kcal-chart" class="chart"></div>
+      </div>
+      <div class="card">
+        <h2>Ayuno</h2>
+        <div id="fast-stats"></div>
       </div>
     </section>
 
@@ -110,6 +163,7 @@
 
   <nav class="tabbar">
     <button data-view="diary" class="active">Diario</button>
+    <button data-view="fast">Ayuno</button>
     <button data-view="progress">Progreso</button>
     <button data-view="profile">Perfil</button>
   </nav>

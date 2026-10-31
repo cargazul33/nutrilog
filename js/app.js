@@ -4,6 +4,10 @@ import {
 } from './calc.js';
 import { loadState, saveState, mergeState, newId, rememberFood, setWeight } from './store.js';
 import { searchFoods, getByBarcode, errorMessage } from './off.js';
+import {
+  PROTOCOLS, MIN_GOAL_HOURS, MAX_GOAL_HOURS, isExtended, validGoal, protocolLabel, fastProgress,
+  formatDuration, startFast, endFast, isProlongedRecord, fastingStats,
+} from './fasting.js';
 
 const $ = (sel) => document.querySelector(sel);
 const state = loadState();
@@ -346,9 +350,177 @@ function renderKcalChart() {
   $('#kcal-chart').replaceChildren(root);
 }
 
+function renderFastStats() {
+  const box = $('#fast-stats');
+  const s = fastingStats(state.fasting.history, Date.now());
+  if (!s.total) {
+    box.replaceChildren(el('p', { class: 'muted' }, 'Cuando termines tu primer ayuno verás aquí el resumen.'));
+    return;
+  }
+  const items = [
+    [s.completed, `cumplidos de ${s.total}`],
+    [`${s.totalHours} h`, 'en ayuno en total'],
+    [formatHM(s.longestMs), 'ayuno más largo'],
+    [s.thisWeek, 'cumplidos esta semana'],
+    [s.streakDays, s.streakDays === 1 ? 'día de racha' : 'días de racha'],
+  ];
+  box.replaceChildren(el('div', { class: 'stats-grid' },
+    items.map(([value, label]) => el('div', { class: 'stat' }, el('strong', {}, String(value)), el('span', {}, label)))));
+}
+
 function renderProgress() {
   renderWeightChart();
   renderKcalChart();
+  renderFastStats();
+}
+
+/* ---------- Ayuno ---------- */
+
+let fastChoice = { ...state.fasting.lastGoal }; // { goalHours, protocol }
+let lastEnded = null; // ayuno recién terminado, para el mensaje posterior
+
+const formatHM = (ms) => `${formatDuration(ms).slice(0, -3)} h`;
+
+function formatMoment(ms) {
+  const d = new Date(ms);
+  const day = toISODate(d);
+  const today = toISODate(new Date());
+  const hm = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+  if (day === today) return `hoy ${hm}`;
+  if (day === addDays(today, 1)) return `mañana ${hm}`;
+  if (day === addDays(today, -1)) return `ayer ${hm}`;
+  return `${d.toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' })} ${hm}`;
+}
+
+function setFastRing(ratio, done) {
+  const ring = $('#fast-ring');
+  const circ = 2 * Math.PI * 52;
+  ring.style.strokeDasharray = circ;
+  ring.style.strokeDashoffset = circ * (1 - ratio);
+  ring.classList.toggle('done', done);
+}
+
+function renderFastSetup() {
+  for (const group of ['intermittent', 'extended']) {
+    $(`#chips-${group}`).replaceChildren(...PROTOCOLS.filter((p) => p.group === group).map((p) =>
+      el('button', {
+        type: 'button',
+        class: 'chip',
+        'aria-pressed': String(fastChoice.protocol === p.id),
+        onclick: () => {
+          fastChoice = { goalHours: p.hours, protocol: p.id };
+          $('#custom-hours').value = '';
+          renderFastSetup();
+        },
+      }, p.label)));
+  }
+  const input = $('#custom-hours');
+  if (!fastChoice.protocol && document.activeElement !== input && validGoal(fastChoice.goalHours)) {
+    input.value = fastChoice.goalHours;
+  }
+  const ok = validGoal(fastChoice.goalHours);
+  $('#care-note').hidden = !(ok && isExtended(fastChoice.goalHours));
+  $('#fast-start-btn').disabled = !ok;
+  $('#fast-start-btn').textContent = ok
+    ? `Empezar ayuno de ${fastChoice.goalHours} h`
+    : `Elige una duración entre ${MIN_GOAL_HOURS} y ${MAX_GOAL_HOURS} h`;
+}
+
+// Actualiza solo lo que cambia cada segundo.
+function tickFast() {
+  const fast = state.fasting.current;
+  $('#fast-banner').hidden = !fast;
+  if (!fast) return;
+  const p = fastProgress(fast, Date.now());
+  const time = formatDuration(p.elapsedMs);
+  $('#fast-banner-time').textContent = time;
+  $('#fast-elapsed').textContent = time;
+  setFastRing(p.ratio, p.reached);
+  const status = $('#fast-status');
+  status.textContent = p.reached
+    ? 'Meta cumplida. Termina el ayuno cuando quieras.'
+    : `Faltan ${formatDuration(p.remainingMs)}`;
+  status.classList.toggle('done', p.reached);
+}
+
+function renderLastFast() {
+  const box = $('#fast-last');
+  box.hidden = !lastEnded || Boolean(state.fasting.current);
+  if (box.hidden) return;
+  box.replaceChildren(el('div', {},
+    el('h2', {}, lastEnded.completed ? 'Ayuno cumplido' : 'Ayuno terminado'),
+    el('p', {}, `Ayunaste ${formatHM(lastEnded.durationMs)} con una meta de ${lastEnded.goalHours} h.`),
+    isProlongedRecord(lastEnded) &&
+      el('p', { class: 'care-note' }, 'Para romper un ayuno largo, mejor empezar con una comida liviana.')));
+}
+
+function renderFastHistory() {
+  const list = state.fasting.history;
+  $('#fast-history-empty').hidden = list.length > 0;
+  $('#fast-history').replaceChildren(...list.slice(0, 50).map((r) => el('li', {},
+    el('div', { class: 'name' }, `${formatMoment(r.start)} → ${formatMoment(r.end)}`,
+      el('small', {}, `${protocolLabel(r.protocol, r.goalHours)} · meta ${r.goalHours} h`)),
+    el('span', { class: 'kcal' }, formatHM(r.durationMs),
+      el('small', { class: r.completed ? 'ok' : 'miss' }, r.completed ? '✓ Cumplido' : 'No cumplido')),
+    el('button', { class: 'del', type: 'button', 'aria-label': 'Borrar del historial', onclick: () => deleteFast(r.id) }, '✕'))));
+}
+
+function renderFast() {
+  const fast = state.fasting.current;
+  $('#fast-setup').hidden = Boolean(fast);
+  $('#fast-times').hidden = !fast;
+  $('#fast-end-btn').hidden = !fast;
+  if (fast) {
+    const label = protocolLabel(fast.protocol, fast.goalHours);
+    $('#fast-sub').textContent = fast.protocol ? `${label} · meta ${fast.goalHours} h` : `meta ${fast.goalHours} h`;
+    $('#fast-start').textContent = formatMoment(fast.start);
+    $('#fast-goal').textContent = `${fast.goalHours} h`;
+    $('#fast-end').textContent = formatMoment(fastProgress(fast, fast.start).endsAt);
+  } else {
+    $('#fast-elapsed').textContent = '00:00:00';
+    $('#fast-sub').textContent = 'Sin ayuno en curso';
+    $('#fast-status').textContent = '';
+    setFastRing(0, false);
+    renderFastSetup();
+  }
+  renderLastFast();
+  renderFastHistory();
+  tickFast();
+}
+
+function beginFast() {
+  try {
+    startFast(state, fastChoice, Date.now());
+  } catch (err) {
+    toast(err.message);
+    return;
+  }
+  lastEnded = null;
+  persist();
+  renderFast();
+  toast('Ayuno iniciado');
+}
+
+function finishFast() {
+  const fast = state.fasting.current;
+  if (!fast) return;
+  const reached = fastProgress(fast, Date.now()).reached;
+  const question = reached
+    ? '¿Terminar el ayuno ahora?'
+    : `Todavía no llegas a la meta de ${fast.goalHours} h. ¿Terminar igual?`;
+  if (!confirm(question)) return;
+  lastEnded = endFast(state, Date.now(), newId());
+  persist();
+  renderFast();
+  toast(lastEnded.completed ? 'Ayuno cumplido' : 'Ayuno terminado');
+}
+
+function deleteFast(id) {
+  if (!confirm('¿Borrar este ayuno del historial?')) return;
+  state.fasting.history = state.fasting.history.filter((r) => r.id !== id);
+  if (lastEnded?.id === id) lastEnded = null;
+  persist();
+  renderFast();
 }
 
 /* ---------- Perfil ---------- */
@@ -395,8 +567,11 @@ async function importData(file) {
     const data = mergeState(JSON.parse(await file.text()));
     Object.assign(state, data);
     persist();
+    fastChoice = { ...state.fasting.lastGoal };
+    lastEnded = null;
     fillProfile();
     renderDiary();
+    renderFast();
     toast('Copia importada');
   } catch {
     toast('El archivo no es una copia válida');
@@ -409,6 +584,7 @@ function showView(name) {
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'diary') renderDiary();
+  if (name === 'fast') renderFast();
   if (name === 'progress') renderProgress();
   if (name === 'profile') fillProfile();
 }
@@ -486,6 +662,20 @@ function init() {
     installPrompt = null;
     $('#install-btn').hidden = true;
   });
+
+  // Ayuno
+  $('#fast-start-btn').addEventListener('click', beginFast);
+  $('#fast-end-btn').addEventListener('click', finishFast);
+  $('#fast-banner').addEventListener('click', () => showView('fast'));
+  $('#custom-hours').addEventListener('input', (e) => {
+    fastChoice = { goalHours: e.target.value === '' ? NaN : Number(e.target.value), protocol: null };
+    renderFastSetup();
+  });
+  // El tiempo se calcula desde la marca de inicio, así que el temporizador
+  // muestra el tiempo real aunque la app haya estado cerrada.
+  setInterval(tickFast, 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tickFast(); });
+  renderFast();
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});

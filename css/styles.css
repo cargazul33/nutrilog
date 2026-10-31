@@ -33,6 +33,9 @@
 
 * { box-sizing: border-box; }
 
+/* Las clases con display no deben anular el atributo hidden. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -152,7 +155,7 @@ input, select {
 /* Barra de pestañas */
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0;
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(4, 1fr);
   background: var(--surface); border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -193,3 +196,40 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
   max-width: calc(100% - 32px);
 }
 #toast.show { opacity: 1; }
+
+/* Ayuno */
+.btn.wide { width: 100%; margin-top: 12px; }
+.fast-card { display: grid; justify-items: center; text-align: center; }
+.fast-ring { width: 200px; height: 200px; }
+.fast-ring .ring-text strong { font-size: 1.75rem; font-variant-numeric: tabular-nums; }
+.fast-ring .ring-text span { font-size: .875rem; }
+.ring-fg.done { stroke: var(--protein); }
+.fast-status { margin: 12px 0 0; font-weight: 600; min-height: 1.4em; }
+.fast-status.done { color: var(--primary); }
+.fast-times { width: 100%; margin-top: 12px; text-align: left; }
+.group-title { font-size: .8rem; color: var(--muted); text-transform: uppercase; margin: 12px 0 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  border-radius: 999px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+.custom-hours { display: grid; gap: 4px; font-size: .875rem; color: var(--muted); margin-top: 12px; }
+.care-note {
+  margin: 12px 0 0; padding: 10px 12px; border-radius: 10px;
+  background: var(--bg); border-left: 4px solid var(--carbs); font-size: .9rem;
+}
+.fast-banner {
+  width: 100%; display: flex; justify-content: space-between; align-items: center;
+  font: inherit; color: var(--text); cursor: pointer; text-align: left;
+  border-left: 4px solid var(--primary);
+}
+.fast-banner strong { font-variant-numeric: tabular-nums; }
+.entries .ok { color: var(--primary); }
+.entries .miss { color: var(--muted); }
+.entries .del {
+  border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 0 0 0 8px;
+}
+.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.stat strong { display: block; font-size: 1.25rem; }
+.stat span { color: var(--muted); font-size: .8rem; }

@@ -1,5 +1,7 @@
 // Persistencia local de los datos del usuario.
 
+import { sanitizeFasting } from './fasting.js';
+
 const KEY = 'nutrilog:v1';
 
 export function defaultState() {
@@ -17,6 +19,7 @@ export function defaultState() {
     recentFoods: [], // { key, name, brand, per100, serving }
     weights: [], // { date, kg }
     water: {}, // { 'YYYY-MM-DD': ml }
+    fasting: sanitizeFasting(null), // { current, history, lastGoal }
   };
 }
 
@@ -49,6 +52,7 @@ export function mergeState(data) {
     recentFoods: Array.isArray(data.recentFoods) ? data.recentFoods : [],
     weights: Array.isArray(data.weights) ? data.weights : [],
     water: data.water && typeof data.water === 'object' ? data.water : {},
+    fasting: sanitizeFasting(data.fasting),
   };
 }
 
