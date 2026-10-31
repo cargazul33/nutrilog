@@ -1,0 +1,13 @@
+{
+  "name": "nutrilog",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Diario de comidas y calorías como app web instalable",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
+}

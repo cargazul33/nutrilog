@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NutriLog</title>
+  <meta name="description" content="Diario de comidas y calorías">
+  <meta name="theme-color" content="#1f8a5b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>NutriLog</h1>
+    <button id="install-btn" class="btn small" hidden>Instalar</button>
+  </header>
+
+  <main>
+    <!-- Diario -->
+    <section id="view-diary" class="view active" aria-label="Diario">
+      <nav class="datebar">
+        <button class="icon-btn" data-day="-1" aria-label="Día anterior">‹</button>
+        <button id="date-label" class="date-label"></button>
+        <button class="icon-btn" data-day="1" aria-label="Día siguiente">›</button>
+      </nav>
+
+      <div class="card summary">
+        <div class="ring-wrap">
+          <svg viewBox="0 0 120 120" class="ring" aria-hidden="true">
+            <circle cx="60" cy="60" r="52" class="ring-bg"/>
+            <circle cx="60" cy="60" r="52" class="ring-fg" id="ring-fg"/>
+          </svg>
+          <div class="ring-text">
+            <strong id="kcal-left">0</strong>
+            <span id="kcal-left-label">restantes</span>
+          </div>
+        </div>
+        <dl class="kcal-stats">
+          <div><dt>Objetivo</dt><dd id="kcal-goal">0</dd></div>
+          <div><dt>Consumido</dt><dd id="kcal-eaten">0</dd></div>
+        </dl>
+        <div class="macros" id="macros"></div>
+      </div>
+
+      <div id="meals"></div>
+
+      <div class="card water">
+        <div>
+          <h2>Agua</h2>
+          <p><span id="water-ml">0</span> ml</p>
+        </div>
+        <div class="water-actions">
+          <button class="btn ghost" data-water="-250" aria-label="Quitar 250 ml">−</button>
+          <button class="btn" data-water="250">+250 ml</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Progreso -->
+    <section id="view-progress" class="view" aria-label="Progreso">
+      <div class="card">
+        <h2>Peso</h2>
+        <form id="weight-form" class="row">
+          <input type="number" id="weight-input" step="0.1" min="20" max="400" placeholder="kg" required inputmode="decimal">
+          <button class="btn" type="submit">Registrar hoy</button>
+        </form>
+        <div id="weight-chart" class="chart"></div>
+        <p class="muted" id="weight-summary"></p>
+      </div>
+      <div class="card">
+        <h2>Calorías · últimos 7 días</h2>
+        <div id="kcal-chart" class="chart"></div>
+      </div>
+    </section>
+
+    <!-- Perfil -->
+    <section id="view-profile" class="view" aria-label="Perfil">
+      <form id="profile-form" class="card form">
+        <h2>Mis datos</h2>
+        <label>Sexo
+          <select name="sex"><option value="female">Mujer</option><option value="male">Hombre</option></select>
+        </label>
+        <label>Edad <input type="number" name="age" min="10" max="110" required inputmode="numeric"></label>
+        <label>Altura (cm) <input type="number" name="heightCm" min="100" max="250" required inputmode="numeric"></label>
+        <label>Peso (kg) <input type="number" name="weightKg" step="0.1" min="20" max="400" required inputmode="decimal"></label>
+        <label>Actividad <select name="activity" id="activity-select"></select></label>
+        <label>Objetivo <select name="goal" id="goal-select"></select></label>
+        <label>Calorías personalizadas (opcional)
+          <input type="number" name="customKcal" min="800" max="6000" placeholder="Automático" inputmode="numeric">
+        </label>
+        <p class="goal-preview" id="goal-preview"></p>
+        <button class="btn" type="submit">Guardar</button>
+      </form>
+      <div class="card form">
+        <h2>Datos</h2>
+        <p class="muted">Todo se guarda solo en este dispositivo.</p>
+        <div class="row">
+          <button class="btn ghost" id="export-btn" type="button">Exportar copia</button>
+          <label class="btn ghost file-btn">Importar copia<input type="file" id="import-input" accept="application/json" hidden></label>
+        </div>
+      </div>
+      <p class="muted center small-text">Datos de alimentos: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL).</p>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-view="diary" class="active">Diario</button>
+    <button data-view="progress">Progreso</button>
+    <button data-view="profile">Perfil</button>
+  </nav>
+
+  <!-- Añadir alimento -->
+  <dialog id="add-dialog" class="sheet">
+    <div class="sheet-head">
+      <h2 id="add-title">Añadir</h2>
+      <button class="icon-btn" data-close aria-label="Cerrar">✕</button>
+    </div>
+    <form id="search-form" class="row">
+      <input type="search" id="search-input" placeholder="Buscar alimento o marca" autocomplete="off" enterkeyhint="search">
+      <button class="btn" type="submit">Buscar</button>
+    </form>
+    <div class="row">
+      <button class="btn ghost" id="scan-btn" type="button">Escanear código</button>
+      <button class="btn ghost" id="manual-btn" type="button">Entrada manual</button>
+    </div>
+    <p class="muted" id="search-status"></p>
+    <ul class="food-list" id="food-results"></ul>
+  </dialog>
+
+  <!-- Cantidad / edición -->
+  <dialog id="amount-dialog" class="sheet">
+    <form id="amount-form" method="dialog">
+      <div class="sheet-head">
+        <h2 id="amount-title">Alimento</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Cerrar">✕</button>
+      </div>
+      <div id="manual-fields" class="form" hidden>
+        <label>Nombre <input name="name" maxlength="80"></label>
+        <label>Calorías por 100 g <input type="number" name="kcal" min="0" max="900" step="1" inputmode="decimal"></label>
+        <label>Proteínas por 100 g <input type="number" name="protein" min="0" max="100" step="0.1" inputmode="decimal"></label>
+        <label>Carbohidratos por 100 g <input type="number" name="carbs" min="0" max="100" step="0.1" inputmode="decimal"></label>
+        <label>Grasas por 100 g <input type="number" name="fat" min="0" max="100" step="0.1" inputmode="decimal"></label>
+      </div>
+      <div class="form">
+        <label>Cantidad (g) <input type="number" name="grams" min="1" max="5000" step="1" required inputmode="decimal"></label>
+        <label>Comida <select name="meal" id="meal-select"></select></label>
+      </div>
+      <p class="amount-preview" id="amount-preview"></p>
+      <div class="row">
+        <button class="btn danger" type="button" id="delete-entry" hidden>Eliminar</button>
+        <button class="btn" type="submit" id="amount-submit">Añadir</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Escáner -->
+  <dialog id="scan-dialog" class="sheet">
+    <div class="sheet-head">
+      <h2>Escanear código</h2>
+      <button class="icon-btn" data-close aria-label="Cerrar">✕</button>
+    </div>
+    <video id="scan-video" playsinline muted></video>
+    <form id="barcode-form" class="row">
+      <input id="barcode-input" inputmode="numeric" placeholder="O escribe el código" pattern="[0-9]{6,14}">
+      <button class="btn" type="submit">Buscar</button>
+    </form>
+    <p class="muted" id="scan-status"></p>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
